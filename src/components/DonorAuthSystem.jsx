@@ -1,7 +1,15 @@
-import React, { useState } from 'react';
-import { Heart, User, Mail, Lock, Phone, MapPin, Calendar, UserPlus, LogIn, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Heart, User, Mail, Lock, Phone, MapPin, Calendar, UserPlus, LogIn, Eye, EyeOff, XCircle, CheckCircle } from 'lucide-react';
 
-const DonorAuthSystem = () => {
+// Main authentication component for the donor system.
+// This component has been updated to communicate with a custom Node.js backend
+// for handling user authentication and profile storage.
+const DonorAuthSystem = ({ onAuthSuccess }) => {
+  // IMPORTANT: Replace this with the URL of your deployed Node.js backend.
+  // For local development, it will likely be something like 'http://localhost:3000'.
+  const API_URL = 'http://localhost:3000/api/users';
+
+  // --- STATE MANAGEMENT ---
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -24,12 +32,18 @@ const DonorAuthSystem = () => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
+  // State for the custom modal messages
+  const [message, setMessage] = useState(null);
+
+  // --- FORM DATA & UI VARIABLES ---
   const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
   const availableOrgans = ['Heart', 'Liver', 'Kidney', 'Lungs', 'Cornea', 'Bone Marrow', 'Skin', 'Pancreas'];
 
+  // --- HANDLERS ---
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     
+    // Handle checkbox input for organs
     if (name === 'organsDonate') {
       setFormData(prev => ({
         ...prev,
@@ -46,31 +60,22 @@ const DonorAuthSystem = () => {
     
     // Clear error when user starts typing
     if (errors[name]) {
-      setErrors(prev => ({
-        ...prev,
-        [name]: ''
-      }));
+      setErrors(prev => ({ ...prev, [name]: '' }));
     }
   };
 
   const validateForm = () => {
     const newErrors = {};
 
-    if (isLogin) {
-      if (!formData.email) newErrors.email = 'Email is required';
-      else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid';
-      
-      if (!formData.password) newErrors.password = 'Password is required';
-      else if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters';
-    } else {
+    if (!formData.email) newErrors.email = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid';
+    
+    if (!formData.password) newErrors.password = 'Password is required';
+    else if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+
+    if (!isLogin) {
       if (!formData.fullName) newErrors.fullName = 'Full name is required';
       else if (formData.fullName.length < 2) newErrors.fullName = 'Name must be at least 2 characters';
-      
-      if (!formData.email) newErrors.email = 'Email is required';
-      else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid';
-      
-      if (!formData.password) newErrors.password = 'Password is required';
-      else if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters';
       
       if (formData.password !== formData.confirmPassword) {
         newErrors.confirmPassword = 'Passwords do not match';
@@ -97,31 +102,53 @@ const DonorAuthSystem = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
     if (!validateForm()) return;
     
     setLoading(true);
-    
+    setMessage(null);
+
+    const endpoint = isLogin ? `${API_URL}/login` : `${API_URL}/signup`;
+    const payload = isLogin 
+      ? { email: formData.email, password: formData.password }
+      : {
+        fullName: formData.fullName,
+        email: formData.email,
+        password: formData.password,
+        phone: formData.phone,
+        dateOfBirth: formData.dateOfBirth,
+        bloodGroup: formData.bloodGroup,
+        location: formData.location,
+        userType: formData.userType,
+        organsDonate: formData.organsDonate,
+        medicalHistory: formData.medicalHistory,
+        emergencyContact: formData.emergencyContact,
+      };
+
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      if (isLogin) {
-        console.log('Login attempt:', { 
-          email: formData.email, 
-          password: formData.password 
-        });
-        alert(`Welcome back to LifeConnect! 🎉\n\nLogin successful for: ${formData.email}\n\n(This is a demo - in production, you'll be redirected to the dashboard)`);
-      } else {
-        console.log('Signup attempt:', {
-          ...formData,
-          password: '[HIDDEN FOR SECURITY]'
-        });
-        alert(`Welcome to LifeConnect! 🎉\n\nAccount created successfully!\n\nUser: ${formData.fullName}\nType: ${formData.userType}\nBlood Group: ${formData.bloodGroup}\n\n(This is a demo - in production, you'll receive a verification email)`);
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Handle server-side errors
+        throw new Error(data.message || 'An unexpected error occurred.');
       }
+
+      console.log(`${isLogin ? 'Login' : 'Signup'} successful!`, data);
+      
+      // Pass user data to the parent component.
+      // The backend should return the user's details upon successful login/signup.
+      onAuthSuccess({ ...data.user, uid: data.user.id });
+      setMessage({ type: 'success', text: `${isLogin ? 'Login' : 'Account created'} successful! Redirecting...` });
+
     } catch (error) {
       console.error('Auth error:', error);
-      alert('An error occurred. Please try again.');
+      setMessage({ type: 'error', text: error.message || 'An unexpected error occurred.' });
+      setErrors({ api: error.message }); // Set a general API error
     } finally {
       setLoading(false);
     }
@@ -147,9 +174,35 @@ const DonorAuthSystem = () => {
     setShowPassword(false);
     setShowConfirmPassword(false);
   };
+  
+  // Custom message modal to replace alert()
+  const MessageModal = ({ type, text, onClose }) => (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg p-6 shadow-xl w-full max-w-sm text-center">
+        <div className="flex justify-center mb-4">
+          {type === 'success' ? (
+            <CheckCircle className="w-12 h-12 text-green-500" />
+          ) : (
+            <XCircle className="w-12 h-12 text-red-500" />
+          )}
+        </div>
+        <h3 className="text-xl font-semibold text-gray-800 mb-2">{type === 'success' ? 'Success!' : 'Error'}</h3>
+        <p className="text-gray-600 mb-4">{text}</p>
+        <button
+          onClick={onClose}
+          className="w-full bg-red-500 text-white py-2 px-4 rounded-lg hover:bg-red-600 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center p-4 font-sans">
+      {/* Custom Message Modal */}
+      {message && <MessageModal type={message.type} text={message.text} onClose={() => setMessage(null)} />}
+
       <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-red-500 to-pink-500 px-6 py-8 text-center">
@@ -161,7 +214,7 @@ const DonorAuthSystem = () => {
         </div>
 
         {/* Form */}
-        <div className="px-6 py-8 max-h-96 overflow-y-auto">
+        <div className="px-6 py-8 max-h-[80vh] overflow-y-auto">
           <div className="text-center mb-6">
             <h2 className="text-2xl font-semibold text-gray-800">
               {isLogin ? 'Welcome Back' : 'Join Our Mission'}
@@ -440,17 +493,7 @@ const DonorAuthSystem = () => {
               </button>
             </p>
           </div>
-
-          {/* Terms */}
-          {!isLogin && (
-            <div className="mt-4 text-center">
-              <p className="text-xs text-gray-500">
-                By creating an account, you agree to our{' '}
-                <span className="text-red-500 underline cursor-pointer hover:text-red-600">Terms of Service</span> and{' '}
-                <span className="text-red-500 underline cursor-pointer hover:text-red-600">Privacy Policy</span>
-              </p>
-            </div>
-          )}
+          
         </div>
       </div>
     </div>
